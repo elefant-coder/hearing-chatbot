@@ -12,6 +12,14 @@ export async function GET(req: NextRequest) {
     )
   }
 
+  // Check for Supabase credentials
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json(
+      { error: 'Database not configured' },
+      { status: 500 }
+    )
+  }
+
   try {
     const supabase = createServerClient()
     
@@ -31,3 +39,6 @@ export async function GET(req: NextRequest) {
     )
   }
 }
+
+// Disable static generation
+export const dynamic = 'force-dynamic'

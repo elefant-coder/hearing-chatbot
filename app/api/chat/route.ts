@@ -1,10 +1,5 @@
-import { OpenAI } from 'openai'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase'
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
 
 const SYSTEM_PROMPT = `あなたは株式会社Elefantのヒアリング担当AIアシスタントです。
 クライアントに対して親しみやすく、プロフェッショナルな態度で接してください。
@@ -38,9 +33,26 @@ interface Message {
   content: string
 }
 
+// Dynamic import to avoid build-time initialization
+async function getOpenAI() {
+  const { OpenAI } = await import('openai')
+  return new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  })
+}
+
 export async function POST(req: NextRequest) {
+  // Check for API key
+  if (!process.env.OPENAI_API_KEY) {
+    return NextResponse.json(
+      { error: 'OpenAI API key not configured' },
+      { status: 500 }
+    )
+  }
+
   try {
     const { messages, sessionId } = await req.json()
+    const openai = await getOpenAI()
 
     // OpenAI API call
     const response = await openai.chat.completions.create({
@@ -56,22 +68,27 @@ export async function POST(req: NextRequest) {
     const assistantMessage = response.choices[0].message.content
 
     // Save to Supabase
-    if (sessionId) {
-      const supabase = createServerClient()
-      
-      // Update session with latest messages
-      const allMessages = [
-        ...messages,
-        { role: 'assistant', content: assistantMessage },
-      ]
+    if (sessionId && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      try {
+        const supabase = createServerClient()
+        
+        // Update session with latest messages
+        const allMessages = [
+          ...messages,
+          { role: 'assistant', content: assistantMessage },
+        ]
 
-      await supabase
-        .from('hearing_sessions')
-        .upsert({
-          id: sessionId,
-          messages: allMessages,
-          updated_at: new Date().toISOString(),
-        })
+        await supabase
+          .from('hearing_sessions')
+          .upsert({
+            id: sessionId,
+            messages: allMessages,
+            updated_at: new Date().toISOString(),
+          })
+      } catch (dbError) {
+        console.error('Database save error:', dbError)
+        // Continue even if database save fails
+      }
     }
 
     return NextResponse.json({ 
@@ -86,3 +103,6 @@ export async function POST(req: NextRequest) {
     )
   }
 }
+
+// Disable static generation
+export const dynamic = 'force-dynamic'
